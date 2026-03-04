@@ -5,41 +5,27 @@
 <title>Adventure Logo</title>
 
 <style>
-
-html,body{
+body{
 margin:0;
 overflow:hidden;
 background:black;
 }
-
 </style>
 
 </head>
-
 <body>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/geometries/TextGeometry.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/FontLoader.js"></script>
+<script type="module">
 
-<script>
+import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+import {FontLoader} from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js";
+import {TextGeometry} from "https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js";
 
 const TITLE = "SPACE SLUGGERS";
 
-let scene,camera,renderer;
-let letters=[];
-let clock=new THREE.Clock();
+let scene = new THREE.Scene();
 
-init();
-animate();
-createStars();
-createText();
-
-function init(){
-
-scene = new THREE.Scene();
-
-camera = new THREE.PerspectiveCamera(
+let camera = new THREE.PerspectiveCamera(
 60,
 window.innerWidth/window.innerHeight,
 0.1,
@@ -48,14 +34,14 @@ window.innerWidth/window.innerHeight,
 
 camera.position.z = 40;
 
-renderer = new THREE.WebGLRenderer({antialias:true});
+let renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth,window.innerHeight);
 
 document.body.appendChild(renderer.domElement);
 
 window.addEventListener("resize",()=>{
 
-camera.aspect=window.innerWidth/window.innerHeight;
+camera.aspect = window.innerWidth/window.innerHeight;
 camera.updateProjectionMatrix();
 renderer.setSize(window.innerWidth,window.innerHeight);
 
@@ -64,29 +50,32 @@ renderer.setSize(window.innerWidth,window.innerHeight);
 const ambient = new THREE.AmbientLight(0xffffff,0.7);
 scene.add(ambient);
 
-const keyLight = new THREE.DirectionalLight(0xffffff,1);
-keyLight.position.set(5,10,8);
-scene.add(keyLight);
+const light = new THREE.DirectionalLight(0xffffff,1);
+light.position.set(5,10,10);
+scene.add(light);
 
 const rim = new THREE.DirectionalLight(0xff6600,1);
-rim.position.set(-5,-2,6);
+rim.position.set(-6,-3,6);
 scene.add(rim);
 
-}
+let clock = new THREE.Clock();
+let letters = [];
 
-function createStars(){
 
-const starGeometry=new THREE.BufferGeometry();
-const starCount=1200;
 
-const positions=[];
+/* STARFIELD */
+
+const starGeometry = new THREE.BufferGeometry();
+const starCount = 1500;
+
+let positions = [];
 
 for(let i=0;i<starCount;i++){
 
 positions.push(
 (Math.random()-0.5)*400,
 (Math.random()-0.5)*400,
-Math.random()*-800
+Math.random()*-600
 );
 
 }
@@ -96,26 +85,25 @@ starGeometry.setAttribute(
 new THREE.Float32BufferAttribute(positions,3)
 );
 
-const starMaterial=new THREE.PointsMaterial({
+const starMaterial = new THREE.PointsMaterial({
 color:0xffffff,
 size:0.8
 });
 
-const stars=new THREE.Points(starGeometry,starMaterial);
-
+const stars = new THREE.Points(starGeometry,starMaterial);
 scene.add(stars);
 
-}
 
-function createText(){
 
-const loader=new THREE.FontLoader();
+/* LOAD FONT + CREATE TEXT */
+
+const loader = new FontLoader();
 
 loader.load(
 "https://threejs.org/examples/fonts/helvetiker_bold.typeface.json",
-font=>{
+(font)=>{
 
-let offset=0;
+let offset = 0;
 
 TITLE.split("").forEach((char,i)=>{
 
@@ -124,28 +112,25 @@ offset+=4;
 return;
 }
 
-const geometry=new THREE.TextGeometry(char,{
+const geo = new TextGeometry(char,{
 font:font,
 size:4,
 height:1.2,
-curveSegments:6,
 bevelEnabled:true,
 bevelThickness:0.2,
 bevelSize:0.2,
 bevelSegments:3
 });
 
-geometry.center();
+geo.center();
 
-const material=new THREE.MeshStandardMaterial({
-
+const material = new THREE.MeshStandardMaterial({
 color:0xff7a00,
 metalness:0.4,
 roughness:0.3
-
 });
 
-const mesh=new THREE.Mesh(geometry,material);
+const mesh = new THREE.Mesh(geo,material);
 
 mesh.position.x = offset;
 mesh.position.z = -80;
@@ -154,11 +139,9 @@ mesh.rotation.x = -0.7;
 scene.add(mesh);
 
 letters.push({
-
 mesh:mesh,
 delay:i*0.15,
 startZ:-80
-
 });
 
 offset+=5;
@@ -168,50 +151,71 @@ offset+=5;
 offset = offset/2;
 
 letters.forEach(l=>{
-
 l.mesh.position.x -= offset;
-
 });
 
 }
 );
 
-}
 
-let introTime=0;
+
+let introTime = 0;
 
 function animate(){
 
 requestAnimationFrame(animate);
 
-let delta=clock.getDelta();
+let delta = clock.getDelta();
 
 introTime += delta;
 
-letters.forEach((letter)=>{
 
-let t=introTime-letter.delay;
+/* star movement */
+
+stars.geometry.attributes.position.array.forEach((v,i,a)=>{
+
+if(i%3===2){
+a[i]+=2;
+
+if(a[i]>10){
+a[i]=-600;
+}
+}
+
+});
+
+stars.geometry.attributes.position.needsUpdate=true;
+
+
+/* letters animation */
+
+letters.forEach(letter=>{
+
+let t = introTime - letter.delay;
 
 if(t>0){
 
-let progress=Math.min(t*2,1);
+let progress = Math.min(t*2,1);
 
-letter.mesh.position.z=
+letter.mesh.position.z =
 THREE.MathUtils.lerp(letter.startZ,0,progress);
 
-letter.mesh.rotation.x=
+letter.mesh.rotation.x =
 THREE.MathUtils.lerp(-0.7,0,progress);
 
 }
 
 if(t>1){
 
-letter.mesh.position.y=
+letter.mesh.position.y =
 Math.sin((introTime+letter.delay)*2)*0.2;
 
 }
 
 });
+
+
+/* camera punch-in */
 
 camera.position.z =
 40 - Math.min(introTime*10,10);
@@ -220,15 +224,21 @@ renderer.render(scene,camera);
 
 }
 
-document.addEventListener("keydown",e=>{
+animate();
 
-if(e.key==="r"||e.key==="R"){
+
+
+/* replay animation */
+
+document.addEventListener("keydown",(e)=>{
+
+if(e.key==="r" || e.key==="R"){
 
 letters.forEach(l=>{
-l.mesh.position.z=l.startZ;
+l.mesh.position.z = l.startZ;
 });
 
-introTime=0;
+introTime = 0;
 
 }
 
