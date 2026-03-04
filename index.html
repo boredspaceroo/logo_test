@@ -3,34 +3,64 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Adventure Logo</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
-  canvas { display: block; }
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: #000;
+    overflow: hidden;
+    width: 100%;
+    /* Use dvh for iOS Safari dynamic toolbar support; fall back to 100vh */
+    height: 100dvh;
+    height: 100vh;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    /* Prevent iOS rubber-band scroll interfering */
+    position: fixed;
+    top: 0; left: 0;
+  }
   #hint {
-    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
-    color: rgba(255,200,80,0.32); font-family: monospace; font-size: 12px;
-    letter-spacing: 2px; pointer-events: none; user-select: none;
+    position: fixed;
+    bottom: max(18px, env(safe-area-inset-bottom, 18px));
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 200, 80, 0.32);
+    font-family: monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
+    z-index: 10;
   }
 </style>
 </head>
 <body>
 <div id="hint">PRESS R TO REPLAY</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+        crossorigin="anonymous"></script>
 <script>
 // ─────────────────────────────────────────────
 //  EDIT THESE
 // ─────────────────────────────────────────────
-const TITLE = "JUNGLE ODYSSEY";
+const TITLE        = "JUNGLE ODYSSEY";
 const WORD1_COLORS = { top: '#FFE033', mid: '#FF8C00', bot: '#FF3300' };
 const WORD2_COLORS = { top: '#FF6A00', mid: '#EE0979', bot: '#8B0000' };
-const OUTLINE_COLOR = '#1a0500';
+const OUTLINE_COLOR  = '#1a0500';
 const SPECULAR_COLOR = '#FFFBE0';
 // ─────────────────────────────────────────────
 
-// Each letter: array of rects [x0,y0,x1,y1] in 0..1 space
+// Each letter: array of rects [x0, y0, x1, y1] in 0..1 space
 const LETTER_RECTS = {
 A: [[0,.6,1,.75],[0,.3,.2,1],[.8,.3,1,1],[0,.42,1,.58]],
 B: [[0,0,.2,1],[0,.42,1,.58],[0,.82,1,1],[.6,0,1,.42],[.6,.58,1,1]],
@@ -63,6 +93,7 @@ Z: [[0,.82,1,1],[0,0,1,.18],[0,.68,.38,1],[.62,0,1,.32],[.32,.38,.68,.62]],
 ‘!’: [[.35,.18,.65,1],[.35,0,.65,.1]],
 };
 
+// ── Procedural extruded letter geometry ───────
 function makeLetterGeometry(ch, depth) {
 const rects = LETTER_RECTS[ch.toUpperCase()] || [];
 const verts = [], norms = [], idxs = [];
@@ -79,18 +110,12 @@ vi += 4;
 for (const [x0u,y0u,x1u,y1u] of rects) {
 const x0 = x0u-0.5, x1 = x1u-0.5;
 const y0 = y0u-0.5, y1 = y1u-0.5;
-// Front  (+Z)
-quad(x0,y0,hd,  x1,y0,hd,  x1,y1,hd,  x0,y1,hd,   0, 0, 1);
-// Back   (-Z)
-quad(x1,y0,-hd, x0,y0,-hd, x0,y1,-hd, x1,y1,-hd,  0, 0,-1);
-// Bottom (-Y)
-quad(x0,y0,-hd, x1,y0,-hd, x1,y0,hd,  x0,y0,hd,   0,-1, 0);
-// Top    (+Y)
-quad(x0,y1,hd,  x1,y1,hd,  x1,y1,-hd, x0,y1,-hd,  0, 1, 0);
-// Left   (-X)
-quad(x0,y0,hd,  x0,y1,hd,  x0,y1,-hd, x0,y0,-hd, -1, 0, 0);
-// Right  (+X)
-quad(x1,y0,-hd, x1,y1,-hd, x1,y1,hd,  x1,y0,hd,   1, 0, 0);
+quad(x0,y0,hd,  x1,y0,hd,  x1,y1,hd,  x0,y1,hd,   0, 0, 1);  // front
+quad(x1,y0,-hd, x0,y0,-hd, x0,y1,-hd, x1,y1,-hd,  0, 0,-1);  // back
+quad(x0,y0,-hd, x1,y0,-hd, x1,y0,hd,  x0,y0,hd,   0,-1, 0);  // bottom
+quad(x0,y1,hd,  x1,y1,hd,  x1,y1,-hd, x0,y1,-hd,  0, 1, 0);  // top
+quad(x0,y0,hd,  x0,y1,hd,  x0,y1,-hd, x0,y0,-hd, -1, 0, 0);  // left
+quad(x1,y0,-hd, x1,y1,-hd, x1,y1,hd,  x1,y0,hd,   1, 0, 0);  // right
 }
 
 const geo = new THREE.BufferGeometry();
@@ -100,6 +125,7 @@ geo.setIndex(idxs);
 return geo;
 }
 
+// ── Gradient + lighting shader ─────────────────
 function makeGradientMaterial(colTop, colMid, colBot) {
 return new THREE.ShaderMaterial({
 uniforms: {
@@ -116,22 +142,27 @@ side: THREE.FrontSide,
 });
 }
 
-// ── Scene ─────────────────────────────────────
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// ── Renderer ──────────────────────────────────
+// Get real viewport size — critical for iOS Safari with dynamic toolbar
+function vw() { return window.innerWidth; }
+function vh() { return window.innerHeight; }
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+// Clamp pixel ratio to 2: beyond that is wasteful on Retina/ProMotion screens
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setSize(vw(), vh());
 document.body.appendChild(renderer.domElement);
 
 const scene  = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 200);
+const camera = new THREE.PerspectiveCamera(50, vw() / vh(), 0.01, 200);
 camera.position.set(0, 1.2, 14);
 camera.lookAt(0, 0, 0);
 
 // ── Starfield ─────────────────────────────────
-const STAR_COUNT   = 1800;
-const sPosArr      = new Float32Array(STAR_COUNT * 3);
-const sSizeArr     = new Float32Array(STAR_COUNT);
-const sPhaseArr    = new Float32Array(STAR_COUNT);
+const STAR_COUNT  = 1600;
+const sPosArr     = new Float32Array(STAR_COUNT * 3);
+const sSizeArr    = new Float32Array(STAR_COUNT);
+const sPhaseArr   = new Float32Array(STAR_COUNT);
 for (let i = 0; i < STAR_COUNT; i++) {
 sPosArr[i*3]   = (Math.random()-0.5)*120;
 sPosArr[i*3+1] = (Math.random()-0.5)*80;
@@ -152,9 +183,9 @@ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
 });
 scene.add(new THREE.Points(starGeo, starMat));
 
-// ── Drop shadow plane ─────────────────────────
+// ── Drop shadow ───────────────────────────────
 const shadowMesh = new THREE.Mesh(
-new THREE.PlaneGeometry(20, 3.5),
+new THREE.PlaneGeometry(24, 4),
 new THREE.MeshBasicMaterial({
 color: 0x000000, transparent: true, opacity: 0.5,
 depthWrite: false, blending: THREE.MultiplyBlending,
@@ -164,15 +195,26 @@ shadowMesh.rotation.x = -Math.PI / 2;
 shadowMesh.position.set(0, -2.3, 0);
 scene.add(shadowMesh);
 
-// ── Build logo ────────────────────────────────
-const CHAR_W   = 0.72;
-const GAP      = 0.09;
-const WORD_GAP = 0.85;
-const DEPTH    = 0.38;
+// ── Logo layout constants ──────────────────────
+const CHAR_W    = 0.72;   // letter cell width
+const GAP       = 0.22;   // ← spacing between characters (was 0.09)
+const WORD_GAP  = 1.10;   // spacing between words
+const DEPTH     = 0.38;
 const OUTLINE_S = 1.09;
 
 const words        = TITLE.trim().split(/\s+/);
 const letterMeshes = [];
+
+// Compute a responsive scale so the logo always fits the screen width
+function computeLogoScale() {
+const wordWidths = words.map(w => w.length * (CHAR_W + GAP) - GAP);
+const rawW = wordWidths.reduce((a, b) => a + b, 0) + (words.length - 1) * WORD_GAP;
+// At camera distance 14, FOV 50°, the visible world-width ≈ 2 * 14 * tan(25°) ≈ 13.05
+const aspect = vw() / vh();
+const visibleW = 2 * 14 * Math.tan((50 * 0.5) * Math.PI / 180) * Math.min(aspect, 1.4);
+const margin = 0.82; // use 82% of screen
+return Math.min(1.0, (visibleW * margin) / rawW);
+}
 
 function buildLogo() {
 for (const { mesh, outline } of letterMeshes) {
@@ -187,7 +229,6 @@ const wordWidths = words.map(w => w.length * (CHAR_W + GAP) - GAP);
 const totalW = wordWidths.reduce((a, b) => a + b, 0) + (words.length - 1) * WORD_GAP;
 let cx = -totalW / 2;
 
-// Single shared outline material (BackSide)
 const outlineMat = new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, side: THREE.BackSide });
 
 words.forEach((word, wi) => {
@@ -198,11 +239,10 @@ const yOff   = wi === 0 ?  0.18 : -0.18;
 
 ```
 word.split('').forEach((ch, ci) => {
-  const geo  = makeLetterGeometry(ch, DEPTH);
-  const mesh = new THREE.Mesh(geo, mat);
+  const geo     = makeLetterGeometry(ch, DEPTH);
+  const mesh    = new THREE.Mesh(geo, mat);
 
-  // Outline geometry: clone + scale via applyMatrix4 (BufferGeometry has no .scale())
-  const outGeo = geo.clone();
+  const outGeo  = geo.clone();
   outGeo.applyMatrix4(new THREE.Matrix4().makeScale(OUTLINE_S, OUTLINE_S, 1.04));
   const outline = new THREE.Mesh(outGeo, outlineMat);
 
@@ -234,6 +274,12 @@ cx += wordWidths[wi] + WORD_GAP;
 ```
 
 });
+
+// Apply responsive scale to a root group — simulated via camera Z
+// (we move the camera closer/further instead of scaling meshes, avoids outline artifacts)
+const s = computeLogoScale();
+camera.position.set(0, 1.2, 14 / s);
+camera.lookAt(0, 0, 0);
 }
 
 buildLogo();
@@ -278,6 +324,7 @@ starMat.uniforms.uTime.value = t;
 if (animPlaying) animTime += dt;
 
 const revealEnd = getRevealEnd();
+const camZ = camera.position.z; // responsive camera Z set in buildLogo
 
 for (const lm of letterMeshes) {
 const { mesh, outline, basePos, baseRot, totalIdx } = lm;
@@ -324,23 +371,40 @@ outline.rotation.copy(mesh.rotation);
 if (animTime > revealEnd + 0.5) animPlaying = false;
 
 camera.position.y = 1.2 + Math.sin(t * 0.38) * 0.055;
+camera.position.z = camZ; // preserve responsive Z during bob
 camera.lookAt(0, 0, 0);
 
 renderer.render(scene, camera);
 }
 animate();
 
-// ── Resize ────────────────────────────────────
-window.addEventListener(‘resize’, () => {
-camera.aspect = window.innerWidth / window.innerHeight;
+// ── Resize — fires on iOS toolbar show/hide too ──
+let resizeTimer;
+function onResize() {
+clearTimeout(resizeTimer);
+// Small debounce: iOS fires resize mid-scroll; wait for it to settle
+resizeTimer = setTimeout(() => {
+const w = vw(), h = vh();
+camera.aspect = w / h;
 camera.updateProjectionMatrix();
-renderer.setSize(window.innerWidth, window.innerHeight);
-});
+renderer.setSize(w, h);
+// Recompute camera Z for new aspect
+const s = computeLogoScale();
+camera.position.z = 14 / s;
+}, 100);
+}
+window.addEventListener(‘resize’, onResize);
+// iOS orientation change fires a separate event
+window.addEventListener(‘orientationchange’, () => setTimeout(onResize, 300));
 
-// ── Keyboard ──────────────────────────────────
+// ── Input — keyboard + tap to replay ──────────
 window.addEventListener(‘keydown’, e => {
 if (e.key.toLowerCase() === ‘r’) playAnimation();
 });
+window.addEventListener(‘touchend’, e => {
+// Tap anywhere replays on mobile (since there’s no keyboard)
+if (e.changedTouches.length === 1) playAnimation();
+}, { passive: true });
 </script>
 
 </body>
