@@ -1,1 +1,347 @@
+<!DOCTYPE html>
 
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adventure Logo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { display: block; }
+  #hint {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,200,80,0.32); font-family: monospace; font-size: 12px;
+    letter-spacing: 2px; pointer-events: none; user-select: none;
+  }
+</style>
+</head>
+<body>
+<div id="hint">PRESS R TO REPLAY</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─────────────────────────────────────────────
+//  EDIT THESE
+// ─────────────────────────────────────────────
+const TITLE = "JUNGLE ODYSSEY";
+const WORD1_COLORS = { top: '#FFE033', mid: '#FF8C00', bot: '#FF3300' };
+const WORD2_COLORS = { top: '#FF6A00', mid: '#EE0979', bot: '#8B0000' };
+const OUTLINE_COLOR = '#1a0500';
+const SPECULAR_COLOR = '#FFFBE0';
+// ─────────────────────────────────────────────
+
+// Each letter: array of rects [x0,y0,x1,y1] in 0..1 space
+const LETTER_RECTS = {
+A: [[0,.6,1,.75],[0,.3,.2,1],[.8,.3,1,1],[0,.42,1,.58]],
+B: [[0,0,.2,1],[0,.42,1,.58],[0,.82,1,1],[.6,0,1,.42],[.6,.58,1,1]],
+C: [[0,.82,1,1],[0,0,1,.18],[0,0,.2,1]],
+D: [[0,0,.2,1],[0,.82,1,1],[0,0,1,.18],[.65,0,1,.42],[.65,.58,1,1]],
+E: [[0,0,.2,1],[0,0,1,.18],[0,.42,.9,.58],[0,.82,1,1]],
+F: [[0,0,.2,1],[0,.42,.9,.58],[0,.82,1,1]],
+G: [[0,.82,1,1],[0,0,1,.18],[0,0,.2,1],[.55,.42,1,.58],[.55,0,1,.42]],
+H: [[0,0,.2,1],[.8,0,1,1],[0,.42,1,.58]],
+I: [[0,.82,1,1],[0,0,1,.18],[.4,0,.6,1]],
+J: [[0,0,.2,.5],[.6,0,1,1],[0,.82,1,1]],
+K: [[0,0,.2,1],[.5,.42,1,1],[.5,0,1,.58]],
+L: [[0,0,.2,1],[0,0,1,.18]],
+M: [[0,0,.2,1],[.8,0,1,1],[0,.7,.45,1],[.55,.7,1,1],[.38,.5,.62,1]],
+N: [[0,0,.2,1],[.8,0,1,1],[0,.68,1,1]],
+O: [[0,0,1,.18],[0,.82,1,1],[0,0,.2,1],[.8,0,1,1]],
+P: [[0,0,.2,1],[0,.55,1,.72],[0,.82,1,1],[.72,.55,1,.82]],
+Q: [[0,0,1,.18],[0,.82,1,1],[0,0,.2,1],[.8,0,1,1],[.55,.28,.85,.5]],
+R: [[0,0,.2,1],[0,.55,1,.72],[0,.82,1,1],[.72,.55,1,.72],[.55,0,.85,.4]],
+S: [[0,.82,1,1],[0,.42,1,.58],[0,0,1,.18],[0,.58,.2,1],[.8,0,1,.42]],
+T: [[0,.82,1,1],[.4,0,.6,1]],
+U: [[0,0,.2,1],[.8,0,1,1],[0,0,1,.18]],
+V: [[0,.35,.2,1],[.8,.35,1,1],[0,.15,.5,.35],[.5,.15,1,.35],[.42,0,.58,.15]],
+W: [[0,0,.2,1],[.8,0,1,1],[.38,.1,.62,.55],[0,.1,.42,.3],[.58,.1,1,.3]],
+X: [[0,0,.38,.45],[.62,0,1,.45],[.38,.45,.62,.55],[0,.55,.38,1],[.62,.55,1,1]],
+Y: [[0,.5,.2,1],[.8,.5,1,1],[0,.62,1,.8],[.4,0,.6,.62]],
+Z: [[0,.82,1,1],[0,0,1,.18],[0,.68,.38,1],[.62,0,1,.32],[.32,.38,.68,.62]],
+’ ’: [],
+‘-’: [[0,.42,1,.58]],
+‘!’: [[.35,.18,.65,1],[.35,0,.65,.1]],
+};
+
+function makeLetterGeometry(ch, depth) {
+const rects = LETTER_RECTS[ch.toUpperCase()] || [];
+const verts = [], norms = [], idxs = [];
+let vi = 0;
+const hd = depth * 0.5;
+
+function quad(ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz, nx,ny,nz) {
+verts.push(ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz);
+norms.push(nx,ny,nz, nx,ny,nz, nx,ny,nz, nx,ny,nz);
+idxs.push(vi, vi+1, vi+2,  vi, vi+2, vi+3);
+vi += 4;
+}
+
+for (const [x0u,y0u,x1u,y1u] of rects) {
+const x0 = x0u-0.5, x1 = x1u-0.5;
+const y0 = y0u-0.5, y1 = y1u-0.5;
+// Front  (+Z)
+quad(x0,y0,hd,  x1,y0,hd,  x1,y1,hd,  x0,y1,hd,   0, 0, 1);
+// Back   (-Z)
+quad(x1,y0,-hd, x0,y0,-hd, x0,y1,-hd, x1,y1,-hd,  0, 0,-1);
+// Bottom (-Y)
+quad(x0,y0,-hd, x1,y0,-hd, x1,y0,hd,  x0,y0,hd,   0,-1, 0);
+// Top    (+Y)
+quad(x0,y1,hd,  x1,y1,hd,  x1,y1,-hd, x0,y1,-hd,  0, 1, 0);
+// Left   (-X)
+quad(x0,y0,hd,  x0,y1,hd,  x0,y1,-hd, x0,y0,-hd, -1, 0, 0);
+// Right  (+X)
+quad(x1,y0,-hd, x1,y1,-hd, x1,y1,hd,  x1,y0,hd,   1, 0, 0);
+}
+
+const geo = new THREE.BufferGeometry();
+geo.setAttribute(‘position’, new THREE.Float32BufferAttribute(verts, 3));
+geo.setAttribute(‘normal’,   new THREE.Float32BufferAttribute(norms, 3));
+geo.setIndex(idxs);
+return geo;
+}
+
+function makeGradientMaterial(colTop, colMid, colBot) {
+return new THREE.ShaderMaterial({
+uniforms: {
+colTop:  { value: new THREE.Color(colTop) },
+colMid:  { value: new THREE.Color(colMid) },
+colBot:  { value: new THREE.Color(colBot) },
+colSpec: { value: new THREE.Color(SPECULAR_COLOR) },
+lightDir:{ value: new THREE.Vector3(0.5, 0.8, 1.0).normalize() },
+rimDir:  { value: new THREE.Vector3(-0.5, 0.3, -0.6).normalize() },
+},
+vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos; varying float vY; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPos = wp.xyz; vNormal = normalize(normalMatrix * normal); vY = clamp(position.y + 0.5, 0.0, 1.0); gl_Position = projectionMatrix * viewMatrix * wp; }`,
+fragmentShader: `uniform vec3 colTop, colMid, colBot, colSpec; uniform vec3 lightDir, rimDir; varying vec3 vNormal, vWorldPos; varying float vY; void main() { vec3 n = normalize(vNormal); vec3 grad = vY < 0.5 ? mix(colBot, colMid, vY * 2.0) : mix(colMid, colTop, (vY - 0.5) * 2.0); float diff = max(dot(n, lightDir), 0.0); vec3 viewDir = normalize(cameraPosition - vWorldPos); vec3 h = normalize(lightDir + viewDir); float spec = pow(max(dot(n, h), 0.0), 64.0); float rim  = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0) * max(dot(n, rimDir), 0.0); vec3 col = grad * (0.28 + 0.72 * diff) + colSpec * spec * 0.55 + vec3(1.0, 0.55, 0.1) * rim * 0.3; gl_FragColor = vec4(col, 1.0); }`,
+side: THREE.FrontSide,
+});
+}
+
+// ── Scene ─────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 200);
+camera.position.set(0, 1.2, 14);
+camera.lookAt(0, 0, 0);
+
+// ── Starfield ─────────────────────────────────
+const STAR_COUNT   = 1800;
+const sPosArr      = new Float32Array(STAR_COUNT * 3);
+const sSizeArr     = new Float32Array(STAR_COUNT);
+const sPhaseArr    = new Float32Array(STAR_COUNT);
+for (let i = 0; i < STAR_COUNT; i++) {
+sPosArr[i*3]   = (Math.random()-0.5)*120;
+sPosArr[i*3+1] = (Math.random()-0.5)*80;
+sPosArr[i*3+2] = (Math.random()-0.5)*60 - 10;
+sSizeArr[i]    = Math.random()*2.5 + 0.5;
+sPhaseArr[i]   = Math.random()*Math.PI*2;
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute(‘position’, new THREE.BufferAttribute(sPosArr,   3));
+starGeo.setAttribute(‘aSize’,    new THREE.BufferAttribute(sSizeArr,  1));
+starGeo.setAttribute(‘aPhase’,   new THREE.BufferAttribute(sPhaseArr, 1));
+
+const starMat = new THREE.ShaderMaterial({
+uniforms: { uTime: { value: 0 } },
+vertexShader: `attribute float aSize; attribute float aPhase; uniform float uTime; varying float vAlpha; void main() { vAlpha = 0.4 + 0.6 * sin(uTime * 1.2 + aPhase); gl_PointSize = aSize * (0.8 + 0.4 * sin(uTime * 0.9 + aPhase)); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+fragmentShader: `varying float vAlpha; void main() { float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard; gl_FragColor = vec4(1.0, 0.97, 0.88, (1.0 - d*d) * vAlpha); }`,
+transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+scene.add(new THREE.Points(starGeo, starMat));
+
+// ── Drop shadow plane ─────────────────────────
+const shadowMesh = new THREE.Mesh(
+new THREE.PlaneGeometry(20, 3.5),
+new THREE.MeshBasicMaterial({
+color: 0x000000, transparent: true, opacity: 0.5,
+depthWrite: false, blending: THREE.MultiplyBlending,
+})
+);
+shadowMesh.rotation.x = -Math.PI / 2;
+shadowMesh.position.set(0, -2.3, 0);
+scene.add(shadowMesh);
+
+// ── Build logo ────────────────────────────────
+const CHAR_W   = 0.72;
+const GAP      = 0.09;
+const WORD_GAP = 0.85;
+const DEPTH    = 0.38;
+const OUTLINE_S = 1.09;
+
+const words        = TITLE.trim().split(/\s+/);
+const letterMeshes = [];
+
+function buildLogo() {
+for (const { mesh, outline } of letterMeshes) {
+scene.remove(mesh);
+scene.remove(outline);
+mesh.geometry.dispose();
+outline.geometry.dispose();
+}
+letterMeshes.length = 0;
+
+const wordWidths = words.map(w => w.length * (CHAR_W + GAP) - GAP);
+const totalW = wordWidths.reduce((a, b) => a + b, 0) + (words.length - 1) * WORD_GAP;
+let cx = -totalW / 2;
+
+// Single shared outline material (BackSide)
+const outlineMat = new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, side: THREE.BackSide });
+
+words.forEach((word, wi) => {
+const colors = wi === 0 ? WORD1_COLORS : WORD2_COLORS;
+const mat    = makeGradientMaterial(colors.top, colors.mid, colors.bot);
+const tilt   = wi === 0 ?  0.10 : -0.08;
+const yOff   = wi === 0 ?  0.18 : -0.18;
+
+```
+word.split('').forEach((ch, ci) => {
+  const geo  = makeLetterGeometry(ch, DEPTH);
+  const mesh = new THREE.Mesh(geo, mat);
+
+  // Outline geometry: clone + scale via applyMatrix4 (BufferGeometry has no .scale())
+  const outGeo = geo.clone();
+  outGeo.applyMatrix4(new THREE.Matrix4().makeScale(OUTLINE_S, OUTLINE_S, 1.04));
+  const outline = new THREE.Mesh(outGeo, outlineMat);
+
+  const bx      = cx + ci * (CHAR_W + GAP) + CHAR_W / 2;
+  const by      = yOff + Math.sin(ci * 0.55 + wi * 1.4) * 0.07;
+  const basePos = new THREE.Vector3(bx, by, 0);
+  const baseRot = new THREE.Euler(0, 0, tilt);
+
+  mesh.position.copy(basePos);
+  mesh.rotation.copy(baseRot);
+  outline.position.copy(basePos);
+  outline.rotation.copy(baseRot);
+
+  mesh.scale.setScalar(0.001);
+  outline.scale.setScalar(0.001);
+
+  scene.add(outline);
+  scene.add(mesh);
+
+  letterMeshes.push({
+    mesh, outline,
+    basePos: basePos.clone(),
+    baseRot: baseRot.clone(),
+    totalIdx: letterMeshes.length,
+  });
+});
+
+cx += wordWidths[wi] + WORD_GAP;
+```
+
+});
+}
+
+buildLogo();
+
+// ── Animation ─────────────────────────────────
+const LETTER_DELAY = 0.09;
+const REVEAL_DUR   = 0.30;
+const JUMP_DELAY   = 0.10;
+const JUMP_DUR     = 0.20;
+
+function easeOutBack(t) {
+const c1 = 1.70158, c3 = c1 + 1;
+return 1 + c3 * Math.pow(t-1, 3) + c1 * Math.pow(t-1, 2);
+}
+
+let animTime    = 0;
+let animPlaying = false;
+
+function getRevealEnd() {
+return letterMeshes.length * LETTER_DELAY + REVEAL_DUR + JUMP_DELAY + JUMP_DUR;
+}
+
+function playAnimation() {
+animTime    = 0;
+animPlaying = true;
+for (const { mesh, outline } of letterMeshes) {
+mesh.scale.setScalar(0.001);
+outline.scale.setScalar(0.001);
+}
+}
+playAnimation();
+
+// ── Render loop ───────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+requestAnimationFrame(animate);
+const dt = clock.getDelta();
+const t  = clock.getElapsedTime();
+
+starMat.uniforms.uTime.value = t;
+if (animPlaying) animTime += dt;
+
+const revealEnd = getRevealEnd();
+
+for (const lm of letterMeshes) {
+const { mesh, outline, basePos, baseRot, totalIdx } = lm;
+
+```
+const revStart = totalIdx * LETTER_DELAY;
+const revEnd   = revStart + REVEAL_DUR;
+let sc = 0.001, ry = 0, rz = 0;
+
+if (animTime >= revStart) {
+  const tp = Math.min((animTime - revStart) / REVEAL_DUR, 1.0);
+  sc = easeOutBack(tp);
+  ry = (1.0 - tp) * 1.2;
+  rz = (1.0 - tp) * 0.55 * (totalIdx % 2 === 0 ? 1 : -1);
+}
+
+const jmpStart = revEnd + JUMP_DELAY;
+let jmp = 0;
+if (animTime >= jmpStart && animTime <= jmpStart + JUMP_DUR + 0.06) {
+  const tp = Math.min((animTime - jmpStart) / JUMP_DUR, 1.0);
+  jmp = Math.sin(tp * Math.PI) * 1.4;
+}
+
+let idleY = 0, idleRZ = 0;
+if (animTime > revealEnd) {
+  const ph = t * 0.75 + totalIdx * 0.38;
+  idleY  = Math.sin(ph) * 0.03;
+  idleRZ = Math.sin(ph * 1.3 + 1.0) * 0.007;
+  sc = Math.max(sc, 1.0);
+}
+
+const fs = Math.max(sc, 0.001);
+mesh.scale.setScalar(fs);
+outline.scale.setScalar(fs);
+
+mesh.position.set(basePos.x, basePos.y + idleY, basePos.z + jmp);
+outline.position.copy(mesh.position);
+mesh.rotation.set(baseRot.x, baseRot.y + ry, baseRot.z + rz + idleRZ);
+outline.rotation.copy(mesh.rotation);
+```
+
+}
+
+if (animTime > revealEnd + 0.5) animPlaying = false;
+
+camera.position.y = 1.2 + Math.sin(t * 0.38) * 0.055;
+camera.lookAt(0, 0, 0);
+
+renderer.render(scene, camera);
+}
+animate();
+
+// ── Resize ────────────────────────────────────
+window.addEventListener(‘resize’, () => {
+camera.aspect = window.innerWidth / window.innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Keyboard ──────────────────────────────────
+window.addEventListener(‘keydown’, e => {
+if (e.key.toLowerCase() === ‘r’) playAnimation();
+});
+</script>
+
+</body>
+</html>
