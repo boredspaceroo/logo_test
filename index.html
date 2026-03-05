@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Logo Test</title>
+  <style>
+    html, body { margin:0; padding:0; overflow:hidden; background:#000; }
+    canvas { display:block; }
+
+    #hud{
+      position:fixed; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff;
+      font:600 14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:radial-gradient(ellipse at center, rgba(25,25,25,.65), rgba(0,0,0,.92));
+      z-index:10;
+      padding:24px;
+      text-align:center;
+    }
+    #hud pre{
+      margin:12px auto 0;
+      max-width:920px;
+      white-space:pre-wrap;
+      word-break:break-word;
+      opacity:.9;
+      font-weight:500;
+    }
+    #hint{opacity:.8; margin-top:10px; font-weight:500}
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div>
+      Loading 3D logo…
+      <div id="hint">If this hangs, I’ll show the exact error here.</div>
+      <pre id="err"></pre>
+    </div>
+  </div>
+
+  <!-- Classic (non-module) Three.js + examples: stable on iOS Safari + GitHub Pages -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
+
+  <script>
+    // --------------------------
+    // Error reporting
+    // --------------------------
+    const hud = document.getElementById('hud');
+    const errBox = document.getElementById('err');
+
+    function showErr(msg){
+      errBox.textContent = (errBox.textContent ? (errBox.textContent + "\n\n") : "") + String(msg);
+    }
+    window.addEventListener('error', (e) => showErr("JS Error: " + (e.message || e.error || e)));
+    window.addEventListener('unhandledrejection', (e) => showErr("Promise rejection: " + (e.reason && (e.reason.stack || e.reason.message) || e.reason || e)));
+
+    // =========================
+    // EDIT ME
+    // =========================
+    const TITLE = "SPACE SLUGGERS";
+
+    // Gradient face colors (top -> mid -> bottom)
+    const GRAD_TOP = new THREE.Color(0xfff3a0);
+    const GRAD_MID = new THREE.Color(0xffb400);
+    const GRAD_BOT = new THREE.Color(0xff3b00);
+
+    const OUTLINE_COLOR = 0x050505;
+    const GLOW_COLOR    = 0xff7a00;
+
+    // Motion tuning
+    const CAMERA_Z_START = 52;
+    const CAMERA_SPEED   = 10.5;
+
+    // Layout tuning
+    const LINE_GAP = 7.2;          // vertical gap between two lines (world units)
+    const LETTER_GAP = 0.85;       // spacing between letters based on bbox width
+    const WORD_GAP_MULT = 0.85;    // spacing for spaces relative to letter size
+
+    // Nudge the whole logo down a touch (helps iPhone UI / notch feel)
+    const DOWN_SHIFT_PORTRAIT = -2.4;
+    const DOWN_SHIFT_LANDSCAPE = -1.4;
+    // =========================
+
+    if(!window.THREE){
+      showErr("THREE failed to load from CDN. (Content blocker / network / CDN blocked).");
+      throw new Error("THREE missing");
+    }
+
+    // --------------------------
+    // Scene
+    // --------------------------
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2500);
+    camera.position.set(0, 0, CAMERA_Z_START);
+
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    document.body.appendChild(renderer.domElement);
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+    const key = new THREE.DirectionalLight(0xffffff, 1.25);
+    key.position.set(6, 10, 12);
+    scene.add(key);
+
+    const rim = new THREE.DirectionalLight(0xffcc33, 1.15);
+    rim.position.set(-10, -3, 10);
+    scene.add(rim);
+
+    // --------------------------
+    // Stars
+    // --------------------------
+    const starCount = 1900;
+    const starGeom = new THREE.BufferGeometry();
+    const starPos = new Float32Array(starCount*3);
+    for(let i=0;i<starCount;i++){
+      starPos[i*3+0] = (Math.random()-0.5)*520;
+      starPos[i*3+1] = (Math.random()-0.5)*360;
+      starPos[i*3+2] = -Math.random()*1300;
+    }
+    starGeom.setAttribute("position", new THREE.BufferAttribute(starPos,3));
+
+    const stars = new THREE.Points(
+      starGeom,
+      new THREE.PointsMaterial({ color:0xffffff, size:0.9 })
+    );
+    scene.add(stars);
+
+    // --------------------------
+    // Gradient face material (MeshStandard lighting + gradient tint)
+    // --------------------------
+    function makeGradientStandardMaterial(minY, maxY){
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        metalness: 0.58,
+        roughness: 0.22
+      });
+
+      mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uMinY = { value: minY };
+        shader.uniforms.uMaxY = { value: maxY };
+        shader.uniforms.uTop  = { value: GRAD_TOP.clone() };
+        shader.uniforms.uMid  = { value: GRAD_MID.clone() };
+        shader.uniforms.uBot  = { value: GRAD_BOT.clone() };
+
+        shader.vertexShader = shader.vertexShader
+          .replace("#include <common>", "#include <common>\nvarying float vLocalY;\n")
+          .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLocalY = position.y;\n");
+
+        shader.fragmentShader = shader.fragmentShader
+          .replace("#include <common>", "#include <common>\nvarying float vLocalY;\nuniform float uMinY;\nuniform float uMaxY;\nuniform vec3 uTop;\nuniform vec3 uMid;\nuniform vec3 uBot;\n")
+          .replace(
+            "vec4 diffuseColor = vec4( diffuse, opacity );",
+            `
+            vec4 diffuseColor = vec4( diffuse, opacity );
+            float t = clamp((vLocalY - uMinY) / max(0.0001, (uMaxY - uMinY)), 0.0, 1.0);
+            vec3 grad = mix(uBot, uMid, smoothstep(0.0, 0.55, t));
+            grad = mix(grad, uTop, smoothstep(0.55, 1.0, t));
+            diffuseColor.rgb *= grad;
+            `
+          );
+
+        mat.userData.shader = shader;
+      };
+
+      return mat;
+    }
+
+    // --------------------------
+    // Logo construction
+    // --------------------------
+    let logoGroup = null;
+    const letters = [];
+    let introT = 0;
+    const clock = new THREE.Clock();
+
+    // Spark bursts
+    const bursts = [];
+
+    function spawnSparkBurst(worldPos){
+      const count = 34;
+      const geom = new THREE.BufferGeometry();
+      const pos = new Float32Array(count*3);
+      const vel = new Float32Array(count*3);
+
+      for(let i=0;i<count;i++){
+        pos[i*3+0] = worldPos.x;
+        pos[i*3+1] = worldPos.y;
+        pos[i*3+2] = worldPos.z;
+
+        const angle = Math.random() * Math.PI * 2;
+        const r = 0.6 + Math.random() * 1.2;
+        const up = (Math.random() - 0.2) * 1.6;
+
+        vel[i*3+0] = Math.cos(angle) * r;
+        vel[i*3+1] = up;
+        vel[i*3+2] = (Math.random()*0.9) - 0.2;
+      }
+
+      geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+
+      const mat = new THREE.PointsMaterial({
+        color: 0xffc24a,
+        size: 1.05,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+
+      const pts = new THREE.Points(geom, mat);
+      scene.add(pts);
+
+      bursts.push({ obj: pts, vel, born: introT, life: 0.55 });
+    }
+
+    // Center only X/Y (never Z)
+    function centerLogoXYOnly(){
+      const box = new THREE.Box3().setFromObject(logoGroup);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      logoGroup.position.x -= center.x;
+      logoGroup.position.y -= center.y;
+    }
+
+    // Camera punch computed to always fit
+    let maxPunch = 12;
+
+    function computeSafeMaxPunch(){
+      if(!logoGroup) return;
+
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+
+      const box = new THREE.Box3().setFromObject(logoGroup);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+
+      const pad = 0.84;
+      const vFov = THREE.MathUtils.degToRad(camera.fov);
+      const tanHalf = Math.tan(vFov/2);
+
+      const zForH = (size.y / pad) / (2 * tanHalf);
+      const zForW = (size.x / pad) / (2 * tanHalf * camera.aspect);
+
+      const zCloseNeeded = Math.max(zForH, zForW);
+      const punch = CAMERA_Z_START - zCloseNeeded;
+
+      maxPunch = Math.max(2.0, Math.min(punch, 18.0));
+    }
+
+    function applyLayoutFit(){
+      if(!logoGroup) return;
+
+      // Slight portrait shrink (extra safety) — much less needed now that it’s 2 lines
+      const aspect = innerWidth / innerHeight;
+      const portraitScale = (aspect < 1) ? 0.96 : 1.0;
+      logoGroup.scale.setScalar(portraitScale);
+
+      // Center and nudge down
+      centerLogoXYOnly();
+
+      const down = (aspect < 1) ? DOWN_SHIFT_PORTRAIT : DOWN_SHIFT_LANDSCAPE;
+      logoGroup.position.y += down;
+
+      computeSafeMaxPunch();
+    }
+
+    function scheduleRefit(){
+      // iOS Safari often changes the real viewport after load / rotation (UI bars)
+      applyLayoutFit();
+      setTimeout(applyLayoutFit, 180);
+      setTimeout(applyLayoutFit, 520);
+    }
+
+    function replay(){
+      introT = 0;
+
+      for(const L of letters){
+        L.obj.position.z = -110;
+        L.obj.rotation.x = -0.9;
+        L.obj.scale.set(1,1,1);
+        L.sparked = false;
+      }
+
+      while(bursts.length){
+        const b = bursts.pop();
+        scene.remove(b.obj);
+        b.obj.geometry.dispose();
+        b.obj.material.dispose();
+      }
+
+      camera.position.z = CAMERA_Z_START;
+      scheduleRefit();
+    }
+
+    addEventListener("keydown", (e) => {
+      if(e.key === "r" || e.key === "R") replay();
+    });
+
+    function onViewportChange(){
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      scheduleRefit();
+    }
+
+    addEventListener("resize", onViewportChange);
+    if (window.visualViewport){
+      visualViewport.addEventListener("resize", onViewportChange);
+      visualViewport.addEventListener("scroll", onViewportChange);
+    }
+
+    // --------------------------
+    // Build letters with bbox-driven spacing
+    // --------------------------
+    function buildLine(font, text, y){
+      const line = new THREE.Group();
+      line.position.y = y;
+
+      let xCursor = 0;
+
+      for (let i=0;i<text.length;i++){
+        const ch = text[i];
+
+        if(ch === " "){
+          xCursor += 5 * WORD_GAP_MULT;
+          continue;
+        }
+
+        const geo = new THREE.TextGeometry(ch, {
+          font,
+          size: 5,
+          height: 1.7,
+          curveSegments: 7,
+          bevelEnabled: true,
+          bevelThickness: 0.30,
+          bevelSize: 0.26,
+          bevelSegments: 4
+        });
+
+        geo.computeBoundingBox();
+        const bb = geo.boundingBox;
+        const w = (bb.max.x - bb.min.x);
+
+        // Center geometry around its own center so positioning is clean
+        geo.center();
+
+        const faceMat = makeGradientStandardMaterial(bb.min.y, bb.max.y);
+        const face = new THREE.Mesh(geo, faceMat);
+
+        const outlineMat = new THREE.MeshStandardMaterial({
+          color: OUTLINE_COLOR,
+          metalness: 0.06,
+          roughness: 0.98,
+          side: THREE.BackSide
+        });
+        const outline = new THREE.Mesh(geo, outlineMat);
+        outline.scale.set(1.14, 1.14, 1.14);
+        outline.position.z = -0.42;
+
+        const glowMat = new THREE.MeshBasicMaterial({
+          color: GLOW_COLOR,
+          transparent: true,
+          opacity: 0.14,
+          side: THREE.BackSide,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const glow = new THREE.Mesh(geo, glowMat);
+        glow.scale.set(1.22, 1.22, 1.22);
+        glow.position.z = -0.72;
+
+        const letter = new THREE.Group();
+        letter.add(glow);
+        letter.add(outline);
+        letter.add(face);
+
+        letter.position.set(xCursor, 0, -110);
+        letter.rotation.x = -0.9;
+
+        line.add(letter);
+
+        // Store; delay assigned later globally so both lines sequence nicely
+        letters.push({ obj: letter, delay: 0, sparked: false });
+
+        // Advance cursor by actual width + gap
+        xCursor += w + LETTER_GAP;
+      }
+
+      // Center the line around its own bbox center (X only)
+      const box = new THREE.Box3().setFromObject(line);
+      const c = new THREE.Vector3();
+      box.getCenter(c);
+      line.position.x -= c.x;
+
+      return line;
+    }
+
+    // --------------------------
+    // Font load (keep current)
+    // --------------------------
+    const fontUrl = "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/fonts/helvetiker_bold.typeface.json";
+    const loader = new THREE.FontLoader();
+
+    loader.load(
+      fontUrl,
+      (font) => {
+        logoGroup = new THREE.Group();
+        logoGroup.rotation.x = -0.20;
+        logoGroup.rotation.y = 0.15;
+        scene.add(logoGroup);
+
+        // Two-line logic: if exactly two words, split into two lines always
+        const parts = TITLE.trim().split(/\s+/).filter(Boolean);
+
+        if (parts.length === 2){
+          const line1 = buildLine(font, parts[0], +LINE_GAP/2);
+          const line2 = buildLine(font, parts[1], -LINE_GAP/2);
+          logoGroup.add(line1);
+          logoGroup.add(line2);
+        } else {
+          // fallback: single line for 1 word or 3+ words
+          const line = buildLine(font, TITLE, 0);
+          logoGroup.add(line);
+        }
+
+        // Assign delays in final sequence order (top-to-bottom, left-to-right)
+        // Since letters[] were pushed in build order, this is already fine.
+        for (let i=0;i<letters.length;i++){
+          letters[i].delay = i * 0.11;
+        }
+
+        // Center whole logo and fit
+        centerLogoXYOnly();
+        scheduleRefit();
+
+        hud.style.display = "none";
+        tick();
+      },
+      undefined,
+      (err) => showErr("Font failed to load: " + (err && (err.message || err.toString()) || err))
+    );
+
+    // --------------------------
+    // Animation loop
+    // --------------------------
+    function tick(){
+      requestAnimationFrame(tick);
+
+      const dt = clock.getDelta();
+      introT += dt;
+
+      // Stars fly toward camera
+      const a = starGeom.attributes.position.array;
+      for(let i=0;i<a.length;i+=3){
+        a[i+2] += 6.0;
+        if(a[i+2] > 40) a[i+2] = -1300;
+      }
+      starGeom.attributes.position.needsUpdate = true;
+
+      // Letters
+      for(let i=0;i<letters.length;i++){
+        const L = letters[i];
+        const t = introT - L.delay;
+
+        if(t > 0){
+          const p = Math.min(t*2.2, 1);
+
+          L.obj.position.z = THREE.MathUtils.lerp(-110, 0, p);
+          L.obj.rotation.x = THREE.MathUtils.lerp(-0.9, 0, p);
+
+          const punch = (t < 0.36) ? (1 + Math.sin(t*18)*0.065) : 1;
+          L.obj.scale.set(punch, punch, punch);
+
+          if(!L.sparked && p > 0.985){
+            L.sparked = true;
+            const wp = new THREE.Vector3();
+            L.obj.getWorldPosition(wp);
+            spawnSparkBurst(wp);
+          }
+        }
+
+        if(t > 1.0){
+          L.obj.position.y += Math.sin((introT + i*0.11)*2.3) * 0.002; // tiny extra shimmer
+        }
+      }
+
+      // Spark bursts update
+      for(let bi=bursts.length-1; bi>=0; bi--){
+        const b = bursts[bi];
+        const age = introT - b.born;
+        const k = age / b.life;
+
+        b.obj.material.opacity = Math.max(0, 0.95 * (1 - k));
+
+        const arr = b.obj.geometry.attributes.position.array;
+        const vel = b.vel;
+
+        for(let i=0;i<arr.length;i+=3){
+          vel[i+1] -= 0.09;
+          arr[i+0] += vel[i+0];
+          arr[i+1] += vel[i+1];
+          arr[i+2] += vel[i+2];
+        }
+        b.obj.geometry.attributes.position.needsUpdate = true;
+
+        if(age > b.life){
+          scene.remove(b.obj);
+          b.obj.geometry.dispose();
+          b.obj.material.dispose();
+          bursts.splice(bi, 1);
+        }
+      }
+
+      // Camera punch-in (safe for any aspect now)
+      camera.position.z = CAMERA_Z_START - Math.min(introT*CAMERA_SPEED, maxPunch);
+
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
