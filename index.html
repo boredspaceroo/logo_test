@@ -8,7 +8,6 @@
     html, body { margin:0; padding:0; overflow:hidden; background:#000; }
     canvas { display:block; }
 
-    /* Debug overlay: you'll never get a silent blank page */
     #hud{
       position:fixed; inset:0;
       display:flex; align-items:center; justify-content:center;
@@ -39,7 +38,6 @@
     </div>
   </div>
 
-  <!-- Classic (non-module) Three.js + classic examples: stable on iOS Safari + GitHub Pages -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
@@ -60,7 +58,8 @@
     // =========================
     // EDIT ME
     // =========================
-    const TITLE = "SPACE SLUGGERS"; // <- change this
+    const TITLE = "SPACE SLUGGERS";
+
     // Gradient face colors (top -> mid -> bottom)
     const GRAD_TOP = new THREE.Color(0xfff3a0);
     const GRAD_MID = new THREE.Color(0xffb400);
@@ -70,9 +69,8 @@
     const GLOW_COLOR    = 0xff7a00;
 
     // Motion tuning
-    const CAMERA_Z_START = 52;
-    const PUNCH_LANDSCAPE = 14;   // max camera push in landscape
-    const PUNCH_PORTRAIT   = 9.5; // gentler in portrait to avoid cropping
+    const CAMERA_Z_START = 52;     // start camera distance
+    const CAMERA_SPEED   = 10.5;   // punch-in speed
     // =========================
 
     if(!window.THREE){
@@ -91,14 +89,6 @@
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     document.body.appendChild(renderer.domElement);
-
-    addEventListener("resize", () => {
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-      // re-fit group on resize once built
-      if (logoGroup) applyResponsiveFit();
-    });
 
     // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
@@ -131,7 +121,7 @@
     scene.add(stars);
 
     // --------------------------
-    // Gradient face material (keeps MeshStandard lighting, adds gradient tint)
+    // Gradient face material (MeshStandard lighting + gradient tint)
     // --------------------------
     function makeGradientStandardMaterial(minY, maxY){
       const mat = new THREE.MeshStandardMaterial({
@@ -148,20 +138,11 @@
         shader.uniforms.uBot  = { value: GRAD_BOT.clone() };
 
         shader.vertexShader = shader.vertexShader
-          .replace(
-            "#include <common>",
-            "#include <common>\nvarying float vLocalY;\n"
-          )
-          .replace(
-            "#include <begin_vertex>",
-            "#include <begin_vertex>\nvLocalY = position.y;\n"
-          );
+          .replace("#include <common>", "#include <common>\nvarying float vLocalY;\n")
+          .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLocalY = position.y;\n");
 
         shader.fragmentShader = shader.fragmentShader
-          .replace(
-            "#include <common>",
-            "#include <common>\nvarying float vLocalY;\nuniform float uMinY;\nuniform float uMaxY;\nuniform vec3 uTop;\nuniform vec3 uMid;\nuniform vec3 uBot;\n"
-          )
+          .replace("#include <common>", "#include <common>\nvarying float vLocalY;\nuniform float uMinY;\nuniform float uMaxY;\nuniform vec3 uTop;\nuniform vec3 uMid;\nuniform vec3 uBot;\n")
           .replace(
             "vec4 diffuseColor = vec4( diffuse, opacity );",
             `
@@ -191,7 +172,6 @@
     const bursts = [];
 
     function spawnSparkBurst(worldPos){
-      // lightweight, no textures: additive points that fly out and fade
       const count = 34;
       const geom = new THREE.BufferGeometry();
       const pos = new Float32Array(count*3);
@@ -202,7 +182,6 @@
         pos[i*3+1] = worldPos.y;
         pos[i*3+2] = worldPos.z;
 
-        // outward cone-ish, slightly forward
         const angle = Math.random() * Math.PI * 2;
         const r = 0.6 + Math.random() * 1.2;
         const up = (Math.random() - 0.2) * 1.6;
@@ -226,48 +205,73 @@
       const pts = new THREE.Points(geom, mat);
       scene.add(pts);
 
-      bursts.push({
-        obj: pts,
-        pos,
-        vel,
-        born: introT,
-        life: 0.55
-      });
+      bursts.push({ obj: pts, vel, born: introT, life: 0.55 });
+    }
+
+    // --- SAFE centering: only X/Y, NEVER Z ---
+    function centerLogoXYOnly(){
+      const box = new THREE.Box3().setFromObject(logoGroup);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      // Shift only in X/Y so we don't pull the logo forward/back
+      logoGroup.position.x -= center.x;
+      logoGroup.position.y -= center.y;
+      // Keep Z untouched
+    }
+
+    // --- SAFE camera punch fit: compute max punch so it never crops ---
+    let maxPunch = 12;
+
+    function computeSafeMaxPunch(){
+      if(!logoGroup) return;
+
+      // Ensure camera aspect is current
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+
+      // Measure logo box AFTER rotation/outline/glow (true size)
+      const box = new THREE.Box3().setFromObject(logoGroup);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+
+      // How much of the view we allow the logo to occupy
+      const pad = 0.84;
+
+      // Given camera FOV and aspect, solve for minimum Z distance needed to fit width/height
+      const vFov = THREE.MathUtils.degToRad(camera.fov);
+      const tanHalf = Math.tan(vFov/2);
+
+      // To fit height:
+      // visibleH = 2*z*tan(fov/2)  => z >= (sizeY/(pad)) / (2*tanHalf)
+      const zForH = (size.y / pad) / (2 * tanHalf);
+
+      // To fit width:
+      // visibleW = visibleH * aspect = 2*z*tanHalf*aspect  => z >= (sizeX/pad) / (2*tanHalf*aspect)
+      const zForW = (size.x / pad) / (2 * tanHalf * camera.aspect);
+
+      const zCloseNeeded = Math.max(zForH, zForW);
+
+      // Our punch-in moves camera from CAMERA_Z_START to (CAMERA_Z_START - maxPunch)
+      // so maxPunch must be <= CAMERA_Z_START - zCloseNeeded
+      const punch = CAMERA_Z_START - zCloseNeeded;
+
+      // Clamp: never negative, never absurd
+      maxPunch = Math.max(2.0, Math.min(punch, 18.0));
     }
 
     function applyResponsiveFit(){
       if(!logoGroup) return;
 
-      // Choose a safe max punch based on orientation
+      // If your title is long, portrait needs extra help: scale logo slightly down in portrait
       const aspect = innerWidth / innerHeight;
-      maxPunch = (aspect < 1) ? PUNCH_PORTRAIT : PUNCH_LANDSCAPE;
+      const portraitScale = (aspect < 1) ? 0.88 : 1.0;
+      logoGroup.scale.setScalar(portraitScale);
 
-      // Compute bounding box of the logo in its current scale
-      const box = new THREE.Box3().setFromObject(logoGroup);
-      const size = new THREE.Vector3();
-      box.getSize(size);
+      // Recenter after scaling
+      centerLogoXYOnly();
 
-      // Fit at the closest camera distance (startZ - maxPunch)
-      const zClose = CAMERA_Z_START - maxPunch;
-      const vFov = THREE.MathUtils.degToRad(camera.fov);
-      const visibleH = 2 * zClose * Math.tan(vFov / 2);
-      const visibleW = visibleH * camera.aspect;
-
-      const pad = 0.86; // leave some breathing room
-      const scaleX = (visibleW * pad) / Math.max(0.0001, size.x);
-      const scaleY = (visibleH * pad) / Math.max(0.0001, size.y);
-      const fitScale = Math.min(1, scaleX, scaleY);
-
-      logoGroup.scale.setScalar(fitScale);
-    }
-
-    function centerLogoTrue(){
-      // True centering using bounding box (after letters are in group)
-      const box = new THREE.Box3().setFromObject(logoGroup);
-      const center = new THREE.Vector3();
-      box.getCenter(center);
-      // shift group so its bounding-box center is at origin
-      logoGroup.position.sub(center);
+      // Compute safe max punch based on final size
+      computeSafeMaxPunch();
     }
 
     function replay(){
@@ -280,7 +284,6 @@
         L.sparked = false;
       }
 
-      // clear bursts
       while(bursts.length){
         const b = bursts.pop();
         scene.remove(b.obj);
@@ -295,24 +298,30 @@
       if(e.key === "r" || e.key === "R") replay();
     });
 
-    // Font: keep the same one (safe)
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+
+      if(logoGroup){
+        applyResponsiveFit();
+      }
+    });
+
+    // Font (keep current)
     const fontUrl = "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/fonts/helvetiker_bold.typeface.json";
     const loader = new THREE.FontLoader();
-
-    let maxPunch = PUNCH_LANDSCAPE;
 
     loader.load(
       fontUrl,
       (font) => {
         logoGroup = new THREE.Group();
         logoGroup.rotation.x = -0.20;
-        logoGroup.rotation.y = 0.15; // hero tilt
+        logoGroup.rotation.y = 0.15; // heroic tilt
         scene.add(logoGroup);
 
         const chars = TITLE.split("");
         let x = 0;
-
-        // spacing tuned for this font size; centering will correct drift precisely
         const spacing = 5.2;
 
         for(let i=0;i<chars.length;i++){
@@ -333,12 +342,10 @@
           geo.computeBoundingBox();
           geo.center();
 
-          // Gradient face (still lit)
           const bb = geo.boundingBox;
           const faceMat = makeGradientStandardMaterial(bb.min.y, bb.max.y);
           const face = new THREE.Mesh(geo, faceMat);
 
-          // Thick outline
           const outlineMat = new THREE.MeshStandardMaterial({
             color: OUTLINE_COLOR,
             metalness: 0.06,
@@ -349,7 +356,6 @@
           outline.scale.set(1.14, 1.14, 1.14);
           outline.position.z = -0.42;
 
-          // Subtle warm glow rim (very soft)
           const glowMat = new THREE.MeshBasicMaterial({
             color: GLOW_COLOR,
             transparent: true,
@@ -367,6 +373,7 @@
           letter.add(outline);
           letter.add(face);
 
+          // stagger positions
           letter.position.set(x, 0, -110);
           letter.rotation.x = -0.9;
 
@@ -376,22 +383,15 @@
           x += spacing;
         }
 
-        // True centering (fix #2)
-        centerLogoTrue();
-
-        // Responsive portrait fit (fix #1)
+        // Safe centering + fit
+        centerLogoXYOnly();
         applyResponsiveFit();
 
-        // Hide loading overlay once built
         hud.style.display = "none";
-
-        // Start loop
         tick();
       },
       undefined,
-      (err) => {
-        showErr("Font failed to load: " + (err && (err.message || err.toString()) || err));
-      }
+      (err) => showErr("Font failed to load: " + (err && (err.message || err.toString()) || err))
     );
 
     // --------------------------
@@ -411,7 +411,7 @@
       }
       starGeom.attributes.position.needsUpdate = true;
 
-      // Letter stagger punch-in + settle + idle float + spark impact
+      // Letters
       for(let i=0;i<letters.length;i++){
         const L = letters[i];
         const t = introT - L.delay;
@@ -422,44 +422,38 @@
           L.obj.position.z = THREE.MathUtils.lerp(-110, 0, p);
           L.obj.rotation.x = THREE.MathUtils.lerp(-0.9, 0, p);
 
-          // micro impact punch (keeps it arcade)
           const punch = (t < 0.36) ? (1 + Math.sin(t*18)*0.065) : 1;
           L.obj.scale.set(punch, punch, punch);
 
-          // Spark when it "lands" (near completion)
           if(!L.sparked && p > 0.985){
             L.sparked = true;
-
             const wp = new THREE.Vector3();
             L.obj.getWorldPosition(wp);
             spawnSparkBurst(wp);
           }
         }
 
-        // After landing: idle float
         if(t > 1.0){
           L.obj.position.y = Math.sin((introT + i*0.11)*2.3) * 0.35;
         }
       }
 
-      // Update spark bursts
+      // Spark bursts update
       for(let bi=bursts.length-1; bi>=0; bi--){
         const b = bursts[bi];
         const age = introT - b.born;
         const k = age / b.life;
 
-        // fade out
         b.obj.material.opacity = Math.max(0, 0.95 * (1 - k));
 
-        // integrate positions
         const arr = b.obj.geometry.attributes.position.array;
-        for(let i=0;i<b.pos.length;i+=3){
-          // basic gravity-ish drop
-          b.vel[i+1] -= 0.09;
+        const vel = b.vel;
 
-          arr[i+0] += b.vel[i+0];
-          arr[i+1] += b.vel[i+1];
-          arr[i+2] += b.vel[i+2];
+        for(let i=0;i<arr.length;i+=3){
+          vel[i+1] -= 0.09; // gravity-ish
+          arr[i+0] += vel[i+0];
+          arr[i+1] += vel[i+1];
+          arr[i+2] += vel[i+2];
         }
         b.obj.geometry.attributes.position.needsUpdate = true;
 
@@ -471,8 +465,8 @@
         }
       }
 
-      // Camera punch-in (responsive max punch)
-      camera.position.z = CAMERA_Z_START - Math.min(introT*10.5, maxPunch);
+      // Camera punch-in (NOW SAFE for any aspect / title length)
+      camera.position.z = CAMERA_Z_START - Math.min(introT*CAMERA_SPEED, maxPunch);
 
       renderer.render(scene, camera);
     }
