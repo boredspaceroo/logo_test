@@ -415,18 +415,29 @@
         logoGroup.rotation.y = 0.15;
         scene.add(logoGroup);
 
-        // Two-line logic: if exactly two words, split into two lines always
-        const parts = TITLE.trim().split(/\s+/).filter(Boolean);
+        // ---- Forced 2-line layout using TITLE variable ----
 
-        if (parts.length === 2){
-          const line1 = buildLine(font, parts[0], +LINE_GAP/2);
-          const line2 = buildLine(font, parts[1], -LINE_GAP/2);
+        // Split title into words
+        const parts = TITLE.trim().split(/\s+/);
+
+        // If there are at least 2 words, stack first two.
+        // If there is only 1 word, it stays single line.
+        if (parts.length >= 2) {
+
+          const topWord = parts[0];
+          const bottomWord = parts.slice(1).join(" ");
+
+          const line1 = buildLine(font, topWord, +LINE_GAP/2);
+          const line2 = buildLine(font, bottomWord, -LINE_GAP/2);
+
           logoGroup.add(line1);
           logoGroup.add(line2);
+
         } else {
-          // fallback: single line for 1 word or 3+ words
+
           const line = buildLine(font, TITLE, 0);
           logoGroup.add(line);
+
         }
 
         // Assign delays in final sequence order (top-to-bottom, left-to-right)
